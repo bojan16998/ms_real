@@ -88,6 +88,7 @@ MODULE_DESCRIPTION("Driver for title_ip");
 #define IOC_IRQ_FLAG			1 << 12
 #define ERR_IRQ_EN			    1 << 14
 
+#define AXI_OFFSET              0x4
 
 /* -------------------------------------- */
 /* --------FUNCTION DECLARATIONS--------- */
@@ -188,7 +189,7 @@ static int __init title_init(void)
 		printk(KERN_ALERT "[title_init] Failed CHRDEV!\n");
 		return -1;
 	}
-	// printk(KERN_INFO "[cnn_init] Successful CHRDEV!\n");
+	// printk(KERN_INFO "[title_init] Successful CHRDEV!\n");
 
 	my_class = class_create(THIS_MODULE, "title_class");
 	if(my_class == NULL)
@@ -203,7 +204,7 @@ static int __init title_init(void)
 	{
 		goto fail_1;
 	}
-	// printk(KERN_INFO "[title_init] Device cnn-ip created\n");
+	// printk(KERN_INFO "[title_init] Device title-ip created\n");
 
 
 	my_device_dma = device_create(my_class, NULL, MKDEV(MAJOR(my_dev_id), 1), NULL, "dma");
@@ -495,25 +496,28 @@ static int title_probe(struct platform_device *pdev)
     }
 }
 
-static int cnn_remove(struct platform_device *pdev) 
+static int title_remove(struct platform_device *pdev) 
 {
 	switch (device_fsm)
 	{
 	case 0: 
-		printk(KERN_ALERT "[cnn_remove] cnn_p device platform driver removed\n");
-		// iowrite32(0, cnn_p->base_addr);
-		free_irq(cnn_p->irq_num, cnn_p);
-		// printk(KERN_INFO "[cnn_remove] IRQ number for cnn free\n");
-		iounmap(cnn_p->base_addr);
-		release_mem_region(cnn_p->mem_start, cnn_p->mem_end - cnn_p->mem_start + 1);
-		kfree(cnn_p);
+		printk(KERN_ALERT "[title_remove] title_p device platform driver removed\n");
+		// iowrite32(0, title_p->base_addr);
+		free_irq(title_p->irq_num0, title_p);
+        free_irq(title_p->irq_num1, title_p);
+
+		// printk(KERN_INFO "[title_remove] IRQ numbers for title free\n");
+		
+        iounmap(title_p->base_addr);
+		release_mem_region(title_p->mem_start, title_p->mem_end - title_p->mem_start + 1);
+		kfree(title_p);
 	break;
 
 	case 1:
-		printk(KERN_ALERT "[cnn_remove] dma_p platform driver removed\n");
+		printk(KERN_ALERT "[title_remove] dma_p platform driver removed\n");
 		// iowrite32(0, dma_p->base_addr);
-		free_irq(dma_p->irq_num, NULL);
-		// printk(KERN_INFO "[cnn_remove] IRQ number for dma free\n");
+		//free_irq(dma_p->irq_num, NULL);
+		// printk(KERN_INFO "[title_remove] IRQ numbers for dma free\n");
 		iounmap(dma_p->base_addr);
 		release_mem_region(dma_p->mem_start, dma_p->mem_end - dma_p->mem_start + 1);
 		kfree(dma_p);
@@ -521,11 +525,11 @@ static int cnn_remove(struct platform_device *pdev)
 	break;
 
 	default:
-		// printk(KERN_INFO "[cnn_remove] Device FSM in illegal state. \n");
+		// printk(KERN_INFO "[title_remove] Device FSM in illegal state. \n");
 		return -1;
 	}
 	
-	// printk(KERN_INFO "[cnn_remove] Succesfully removed driver\n");
+	// printk(KERN_INFO "[title_remove] Succesfully removed driver\n");
 	return 0;
 }
 
@@ -536,13 +540,13 @@ static int cnn_remove(struct platform_device *pdev)
 
 int title_open(struct inode *pinode, struct file *pfile)
 {
-//	printk(KERN_INFO "CNN FILE OPENED\n");
+//	printk(KERN_INFO "TITLE FILE OPENED\n");
 	return 0;
 }
 
 int title_close(struct inode *pinode, struct file *pfile)
 {
-//	printk(KERN_INFO "CNN FILE CLOSE\n");
+//	printk(KERN_INFO "TITLE FILE CLOSE\n");
 	return 0;
 }
 
@@ -551,48 +555,56 @@ int title_close(struct inode *pinode, struct file *pfile)
 /* -------READ AND WRITE FUNCTIONS------- */
 /* -------------------------------------- */
 
-/*
 int transaction_over = 0;
-volatile int ip_process_over = 0;
+volatile int ip_command_over = 0;
+volatile int ip_frame_over = 0;
 int input_command;
+int dimension;
+int offset;
 
-ssize_t cnn_read(struct file *pfile, char __user *buf, size_t length, loff_t *offset)
-{		
+ssize_t title_read(struct file *pfile, char __user *buf, size_t length, loff_t *offset)
+{   
+    char buff[BUFF_SIZE];
+    int ret = 0;
 	int minor = MINOR(pfile->f_inode->i_rdev);
+    long int len;
 
 	switch(minor)
 	{
-	// Reading from CNN 
+	// Reading from TITLE 
 	case 0:
-		// NOTHING TO DO HERE
-		printk(KERN_WARNING "[cnn_read] Reading from CNN not allowed\n");
-		
+	    len = scnprintf(buff, BUFF_SIZE, "%d\n", ip_frame_over);
+        ret = copy_to_user(buf, buff, len);
+        if(ret)
+            return -EFAULT;
+
+		printk(KERN_WARNING "[title_read] Reading from TITLE is allowed\n");
+		return 0;
 	break;
 	
 	// Reading from DMA 
 	case 1:
 		// NOTHING TO DO HERE
-		printk(KERN_WARNING "[cnn_read] Reading from DMA not allowed. Data should be memory mapped using mmap and memcpy functions from inside app.\n");
+		printk(KERN_WARNING "[title_read] Reading from DMA not allowed. Data should be memory mapped using mmap and memcpy functions from inside app.\n");
 	break;
 	
 	default:
-		printk(KERN_WARNING "[cnn_read] Invalid read command\n");
+		printk(KERN_WARNING "[title_read] Invalid read command\n");
 	break;
 	}
 	
 	return 0;
 }
 
-ssize_t cnn_write(struct file *pfile, const char __user *buf, size_t length, loff_t *offset)
+ssize_t title_write(struct file *pfile, const char __user *buf, size_t length, loff_t *offset)
 {
 	char buff[BUFF_SIZE]; 
 	int ret = 0;
-	int dumb =0;
 	int minor = MINOR(pfile->f_inode->i_rdev);
 	ret = copy_from_user(buff, buf, length);  
 	if(ret)
 	{
-		printk(KERN_WARNING "[cnn_write] Copy from user failed\n");
+		printk(KERN_WARNING "[title_write] Copy from user failed\n");
 		return -EFAULT;
 	}  
 	buff[length] = '\0';
@@ -601,151 +613,169 @@ ssize_t cnn_write(struct file *pfile, const char __user *buf, size_t length, lof
 	{
 		// Writing into CNN 
 		case 0:
-			// printk(KERN_INFO "[cnn_write] Writing into cnn-ip");
-			sscanf(buff, "%d", &input_command);  
+			// printk(KERN_INFO "[title_write] Writing into title-ip");
+			sscanf(buff, "%d,%d,%d", &input_command, &dimension, &offset);  
 			
-			// Check if command is valid //
+            if(offset == 0)
+            {
+			    // Check if command is valid //
 	
-			if(input_command != IP_COMMAND_LOAD_BIAS 		&&
-			   input_command != IP_COMMAND_LOAD_WEIGHTS0 		&&
-			   input_command != IP_COMMAND_LOAD_CONV0_INPUT 	&&
-			   input_command != IP_COMMAND_START_CONV0		&&
-			   input_command != IP_COMMAND_LOAD_WEIGHTS1 		&&
-			   input_command != IP_COMMAND_LOAD_CONV1_INPUT 	&&
-			   input_command != IP_COMMAND_START_CONV1		&&
-			   input_command != IP_COMMAND_LOAD_WEIGHTS2 		&&
-			   input_command != IP_COMMAND_LOAD_CONV2_INPUT 	&&
-			   input_command != IP_COMMAND_START_CONV2		&&
-			   input_command != IP_COMMAND_RESET	 		&&
-			   input_command != IP_COMMAND_READ_CONV0_OUTPUT	&&
-			   input_command != IP_COMMAND_READ_CONV1_OUTPUT	&&
-			   input_command != IP_COMMAND_READ_CONV2_OUTPUT)
-			{
-				printk(KERN_WARNING "[cnn_write] Wrong CNN command! %d\n", input_command);
-				return 0;
-			}
-		
+			    if(input_command != IP_COMMAND_LOAD_LETTER_DATA 	&&
+			       input_command != IP_COMMAND_LOAD_LETTER_MATRIX 	&&
+			       input_command != IP_COMMAND_LOAD_TEXT 	        &&
+			       input_command != IP_COMMAND_LOAD_POSSITION		&&
+			       input_command != IP_COMMAND_LOAD_PHOTO 		    &&
+			       input_command != IP_COMMAND_PROCESSING 	        &&
+			       input_command != IP_COMMAND_SEND_FROM_BRAM		&&
+			       input_command != IP_COMMAND_RESET)
+			    {
+				    printk(KERN_WARNING "[title_write] Wrong TITLE command! %d\n", input_command);
+				    return 0;
+			    }
+					
+
+			    switch(input_command)
+			    {
+			    // Write command 
+			    case IP_COMMAND_LOAD_LETTER_DATA:
+				    dma_simple_write(tx_phy_buffer, LETTER_DATA_LEN, dma_p->base_addr);
+				    // printk(KERN_INFO "[title_write] Starting DMA transaction: LOAD LETTER_DATA\n");
+		    	break;
 			
+			    case IP_COMMAND_LOAD_LETTER_MATRIX:
+                    if(dimension == 0)
+				        dma_simple_write(tx_phy_buffer, D0_LETTER_MATRIX_LEN, dma_p->base_addr);
+				    else if(dimension == 1)
+				        dma_simple_write(tx_phy_buffer, D1_LETTER_MATRIX_LEN, dma_p->base_addr);
+                    else if(dimension == 2)
+				        dma_simple_write(tx_phy_buffer, D2_LETTER_MATRIX_LEN, dma_p->base_addr);
+                    else if(dimension == 3)
+				        dma_simple_write(tx_phy_buffer, D3_LETTER_MATRIX_LEN, dma_p->base_addr);
+                    else if(dimension == 4)
+				        dma_simple_write(tx_phy_buffer, D4_LETTER_MATRIX_LEN, dma_p->base_addr);
+                    
+                    // printk(KERN_INFO "[title_write] Starting DMA transaction: LOAD LETTER_MATRIX\n");
+			    break;
+			
+			    case IP_COMMAND_LOAD_TEXT:
+				    dma_simple_write(tx_phy_buffer, dimension*2, dma_p->base_addr);
+				    // printk(KERN_INFO "[title_write] Starting DMA transaction: LOAD TEXT\n");
+			    break;
+			
+			    case IP_COMMAND_LOAD_POSSITION:
+				    dma_simple_write(tx_phy_buffer, POSSITION_LEN, dma_p->base_addr);
+				    // printk(KERN_INFO "[title_write] Starting DMA transaction: LOAD POSSITION\n");
+			    break;
+			
+			    case IP_COMMAND_LOAD_PHOTO:
+                    if(dimension == 0)
+				        dma_simple_write(tx_phy_buffer, D0_BRAM*D0_WIDTH*3*2, dma_p->base_addr);
+				    else if(dimension == 1)
+				        dma_simple_write(tx_phy_buffer, D1_BRAM*D1_WIdTH*3*2, dma_p->base_addr);
+                    else if(dimension == 2)
+				        dma_simple_write(tx_phy_buffer, D2_BRAM*D2_WIDTH*3*2, dma_p->base_addr);
+                    else if(dimension == 3)
+				        dma_simple_write(tx_phy_buffer, D3_BRAM*D3_WIDTH*3*2, dma_p->base_addr);
+                    else if(dimension == 4)
+				        dma_simple_write(tx_phy_buffer, D4_BRAM*D4_WIDTH*3*2, dma_p->base_addr);
+				
+				    // printk(KERN_INFO "[title_write] Starting DMA transaction: LOAD PHOTO\n");
+			    break;
 			
 
-			switch(input_command)
-			{
-			// Write command 
-			case IP_COMMAND_LOAD_BIAS:
-				dma_simple_write(tx_phy_buffer, BIAS_INPUT_LEN, dma_p->base_addr);
-				// printk(KERN_INFO "[cnn_write] Starting DMA transaction: LOAD BIAS\n");
-			break;
-			
-			case IP_COMMAND_LOAD_WEIGHTS0:
-				dma_simple_write(tx_phy_buffer, CONV0_WEIGHTS_INPUT_LEN, dma_p->base_addr);
-				// printk(KERN_INFO "[cnn_write] Starting DMA transaction: LOAD WEIGHTS0\n");
-			break;
-			
-			case IP_COMMAND_LOAD_CONV0_INPUT:
-				dma_simple_write(tx_phy_buffer, CONV0_PICTURE_INPUT_LEN, dma_p->base_addr);
-				// printk(KERN_INFO "[cnn_write] Starting DMA transaction: LOAD INPUT PICTURE CONV0\n");
-			break;
-			
-			case IP_COMMAND_LOAD_WEIGHTS1:
-				dma_simple_write(tx_phy_buffer, CONV1_WEIGHTS_INPUT_LEN, dma_p->base_addr);
-				// printk(KERN_INFO "[cnn_write] Starting DMA transaction: LOAD WEIGHTS1\n");
-			break;
-			
-			case IP_COMMAND_LOAD_CONV1_INPUT:
-				dma_simple_write(tx_phy_buffer, CONV1_PICTURE_INPUT_LEN, dma_p->base_addr);
-				// printk(KERN_INFO "[cnn_write] Starting DMA transaction: LOAD INPUT PICTURE CONV1\n");
-			break;
-			
-			case IP_COMMAND_LOAD_WEIGHTS2:
-				dma_simple_write(tx_phy_buffer, CONV2_WEIGHTS_INPUT_LEN, dma_p->base_addr);
-				// printk(KERN_INFO "[cnn_write] Starting DMA transaction: LOAD WEIGHTS2\n");
-			break;
-			
-			case IP_COMMAND_LOAD_CONV2_INPUT:
-				dma_simple_write(tx_phy_buffer, CONV2_PICTURE_INPUT_LEN, dma_p->base_addr);
-				// printk(KERN_INFO "[cnn_write] Starting DMA transaction: LOAD INPUT PICTURE CONV2\n");
-			break;
-			
-			
-			// Read command 
-			
-			case IP_COMMAND_READ_CONV0_OUTPUT:
-				dma_simple_read(tx_phy_buffer, CONV0_PICTURE_OUTPUT_LEN, dma_p->base_addr);
-				// printk(KERN_INFO "[cnn_write] Starting DMA transaction: READ CONV0 OUTPUT\n");
-			break;
-			
-			case IP_COMMAND_READ_CONV1_OUTPUT:
-				dma_simple_read(tx_phy_buffer, CONV1_PICTURE_OUTPUT_LEN, dma_p->base_addr);
-				// printk(KERN_INFO "[cnn_write] Starting DMA transaction: READ CONV1 OUTPUT\n");
-			break;
-			
-			case IP_COMMAND_READ_CONV2_OUTPUT:
-				dma_simple_read(tx_phy_buffer, CONV2_PICTURE_OUTPUT_LEN, dma_p->base_addr);
-				// printk(KERN_INFO "[cnn_write] Starting DMA transaction: READ CONV2 OUTPUT\n");
-			break;
-			
-			default:
-				// NOT A LOAD OR READ COMMAND
-			break;
-			}
-			// Write into CNN IP 
-			ip_process_over = 1;
-			iowrite32((u32)input_command, cnn_p->base_addr);
-			if(input_command != IP_COMMAND_RESET)
-			{
-				while(ip_process_over == 1);
-			}
+			    // Read command 
+			    case IP_COMMAND_SEND_FROM_BRAM:
+                    if(dimension == 0)
+				        dma_simple_read(tx_phy_buffer, D0_BRAM*D0_WIDTH*3*2, dma_p->base_addr);
+				    else if(dimension == 1)
+				        dma_simple_read(tx_phy_buffer, D1_BRAM*D1_WIDTH*3*2, dma_p->base_addr);
+                    else if(dimension == 2)
+				        dma_simple_read(tx_phy_buffer, D2_BRAM*D2_WIDTH*3*2, dma_p->base_addr);
+                    else if(dimension == 3)
+				        dma_simple_read(tx_phy_buffer, D3_BRAM*D3_WIDTH*3*2, dma_p->base_addr);
+                    else if(dimension == 4)
+				        dma_simple_read(tx_phy_buffer, D4_BRAM*D4_WIDTH*3*2, dma_p->base_addr);
+				    
+				    // printk(KERN_INFO "[title_write] Starting DMA transaction: SEND FROM BRAM\n");
+			    break;
 
-		// printk(KERN_INFO "[cnn_write] Writing finished!");
-		ip_process_over = 0;
-		transaction_over = 0;
+			
+			    default:
+				    // NOT A LOAD OR READ COMMAND
+			    break;
+			    }
+
+			    // Write into TITLE IP 
+			    ip_command_over = 0;
+                ip_frame_over = 0;
+                iowrite32((u32)input_command, title_p->base_addr);
+			    
+                if(input_command != IP_COMMAND_RESET && input_command != IP_COMMAND_PROCESSING)
+			    {
+				    while(ip_command_over != 1);
+			    }
+                else if(input_command == IP_COMMAND_PROCESSING)
+                {
+                    while(ip_command_over != 1 && ip_frame_over != 1);
+                }
+
+		        // printk(KERN_INFO "[title_write] Writing finished!");
+		        ip_command_over = 0;
+		        transaction_over = 0;
+
+            }
+            else if(offset == 1)
+            {
+                iowrite32((u32)input_command, title_p->base_addr+AXI_OFFSET);
+            }
+
+
 		break;
 		
 		// Writing into DMA 
 		case 1:
 			// NOTHING TO DO HERE
-		//	printk(KERN_WARNING "[cnn_write] Writing into DMA not allowed. Data should be memory mapped using mmap and memcpy functions from inside app.\n");
+		//	printk(KERN_WARNING "[title_write] Writing into DMA not allowed. Data should be memory mapped using mmap and memcpy functions from inside app.\n");
 		break;
 		
 		default:
-			printk(KERN_WARNING "[cnn_write] Invalid write command\n");
+			printk(KERN_WARNING "[title_write] Invalid write command\n");
 		break;
 	}
 	
 	return length;
 }
-*/
+
 /* -------------------------------------- */
 /* ------------MMAP FUNCTION------------- */
 /* -------------------------------------- */
-/*
-static int cnn_mmap(struct file *f, struct vm_area_struct *vma_s)
+
+static int title_mmap(struct file *f, struct vm_area_struct *vma_s)
 {
 	int ret = 0;
 	long length = vma_s->vm_end - vma_s->vm_start;
 
-	// printk(KERN_INFO "[cnn_dma_mmap] DMA TX Buffer is being memory mapped\n");
+	// printk(KERN_INFO "[title_dma_mmap] DMA TX Buffer is being memory mapped\n");
 
-	if(length > 32*32*32*2)
+	if(length > MAX_PKT_LEN)
 	{
 		return -EIO;
-		printk(KERN_ERR "[cnn_dma_mmap] Trying to mmap more space than it's allocated\n");
+		printk(KERN_ERR "[title_dma_mmap] Trying to mmap more space than it's allocated\n");
 	}
 
 	ret = dma_mmap_coherent(my_device_dma, vma_s, tx_vir_buffer, tx_phy_buffer, length);
 	if(ret < 0)
 	{
-		printk(KERN_ERR "[cnn_dma_mmap] Memory map failed\n");
+		printk(KERN_ERR "[title_dma_mmap] Memory map failed\n");
 		return ret;
 	}
 	return 0;
 }
-*/
 
 /* -------------------------------------- */
 /* ------INTERRUPT SERVICE ROUTINES------ */
 /* -------------------------------------- */
-/*
+
 static irqreturn_t dma_MM2S_isr(int irq, void* dev_id)
 {
 	unsigned int IrqStatus;  
@@ -776,19 +806,26 @@ static irqreturn_t dma_S2MM_isr(int irq, void*dev_id)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t cnn_isr(int irq, void*dev_id)
+static irqreturn_t title_command_isr(int irq, void*dev_id)
 {
-	ip_process_over = 0;
-	//printk(KERN_INFO "[cnn_isr] IP finished operation %x\n", input_command);
+	ip_command_over = 1;
+	//printk(KERN_INFO "[title_command_isr] IP finished operation %x\n", input_command);
 	return IRQ_HANDLED;
 }
-*/
+
+static irqreturn_t title_frame_isr(int irq, void*dev_id)
+{
+	ip_frame_over = 1;
+	//printk(KERN_INFO "[title_frame_isr] IP finished operation %x\n", input_command);
+	return IRQ_HANDLED;
+}
+
 /* -------------------------------------- */
 /* ------------DMA FUNCTIONS------------- */
 /* -------------------------------------- */
 
-//int dma_init(void __iomem *base_address)
-//{
+int dma_init(void __iomem *base_address)
+{
 	/* 
 	 * In order for DMA to work proprely, it's internal control registers should be configurated first 
 	 * There is a series of steps needed to be complited before every DMA transcation
@@ -796,7 +833,7 @@ static irqreturn_t cnn_isr(int irq, void*dev_id)
 	 *  - Reset DMA by setting bit 3
 	 *  - Allow interrupts by setting bits 12 and 14 (these interrupts will signal the CPU when the transaction is complited or an error has accured)
 	*/
-	/*
+	
 	u32 MM2S_DMACR_reg = 0;
 	u32 S2MM_DMACR_reg;
 	u32 en_interrupt = 0;
@@ -804,7 +841,7 @@ static irqreturn_t cnn_isr(int irq, void*dev_id)
 	
 	// For debug purpose first we read status register
 	temp = ioread32(base_address + 4);
-	//// printk(KERN_INFO "Initial state of STATUS reg is %u\n", temp);	
+	// printk(KERN_INFO "Initial state of STATUS reg is %u\n", temp);	
 
 	// Writing to MM2S_DMACR register. Setting reset bit (3rd bit) 
 	iowrite32(DMACR_RESET, base_address + MM2S_CONTROL_REGISTER);
@@ -813,7 +850,6 @@ static irqreturn_t cnn_isr(int irq, void*dev_id)
 	temp = ioread32(base_address + 0);
 	// printk(KERN_INFO "[debug - ioread] After reseting control reg is %u\ [should be 65538 probably]\n", temp);
 
-	
 	// Reading from MM2S_DMACR register inside DMA 
 	MM2S_DMACR_reg = ioread32(base_address + MM2S_CONTROL_REGISTER); 
 	// printk(KERN_INFO "[debug - ioread] Reading control reg is %u [probably should be still 65538]\n", MM2S_DMACR_reg);
@@ -853,51 +889,51 @@ unsigned int dma_simple_write(dma_addr_t TxBufferPtr, unsigned int pkt_len, void
 	MM2S_DMACR_reg = ioread32(base_address + MM2S_CONTROL_REGISTER); 
 	
 	en_interrupt = MM2S_DMACR_reg | IOC_IRQ_FLAG | ERR_IRQ_EN;
-	// // printk(KERN_INFO "[debug] int flag is %u\n", en_interrupt);
+	// printk(KERN_INFO "[debug] int flag is %u\n", en_interrupt);
 	
-	iowrite32(en_interrupt, base_address + MM2S_CONTROL_REGISTER);
-	// // printk(KERN_INFO "[dma_init] To enable interrupt and error check, writing %d into %x", en_interrupt, base_address+MM2S_CONTROL_REGISTER);
+    iowrite32(en_interrupt, base_address + MM2S_CONTROL_REGISTER);
+	// printk(KERN_INFO "[dma_init] To enable interrupt and error check, writing %d into %x", en_interrupt, base_address+MM2S_CONTROL_REGISTER);
 
 
 	// READ from MM2S_DMACR register 
 	MM2S_DMACR_reg = ioread32(base_address + MM2S_CONTROL_REGISTER);	
 
-	// // printk(KERN_INFO "[debug - ioread] Initial control register before any changes inside dma_simple_write: %u [should be 86018]\n", MM2S_DMACR_reg);
+	// printk(KERN_INFO "[debug - ioread] Initial control register before any changes inside dma_simple_write: %u [should be 86018]\n", MM2S_DMACR_reg);
 
 
 	temp = ioread32(base_address + 4);
-	// // printk(KERN_INFO "[debug] Before starting DMA, STATUS reg LSB bit is %u [should be 1 - halted]\n", temp & 0x1);
+	// printk(KERN_INFO "[debug] Before starting DMA, STATUS reg LSB bit is %u [should be 1 - halted]\n", temp & 0x1);
 
 
 	// Set RS bit in MM2S_DMACR register (this bit starts the DMA) 
 	iowrite32(0x1 |  MM2S_DMACR_reg, base_address + MM2S_CONTROL_REGISTER);
 	
-	// // printk(KERN_INFO "[dma_simple_write] Writing %d at address %x\n", 0x1 | MM2S_DMACR_reg, base_address + MM2S_CONTROL_REGISTER);
+	// printk(KERN_INFO "[dma_simple_write] Writing %d at address %x\n", 0x1 | MM2S_DMACR_reg, base_address + MM2S_CONTROL_REGISTER);
 	temp = ioread32(base_address + 0);
-	// // printk(KERN_INFO "[debug - iowrite/ioread] After starting RS bit, control register is %u [should be 68019]\n", temp);
+	// printk(KERN_INFO "[debug - iowrite/ioread] After starting RS bit, control register is %u [should be 68019]\n", temp);
 
 
 	temp = ioread32(base_address + 4);
-	// // printk(KERN_INFO "[debug] After starting DMA, STATUS reg LSB bit is %u [should be 0 - running]\n", temp & 0x1);
+	// printk(KERN_INFO "[debug] After starting DMA, STATUS reg LSB bit is %u [should be 0 - running]\n", temp & 0x1);
 
-    */
+    
 	/* Write into MM2S_SA register the value of TxBufferPtr. 
 	 * With this, the DMA knows from where to start - this is the first address of data that needs to be transfered. 
 	*/
-    /*
+    
 	iowrite32((u32)TxBufferPtr, base_address + MM2S_CONTROL_REGISTER + MM2S_SRC_ADDRESS_REGISTER);
 
-	// // printk(KERN_INFO "[dma_simple_write] Writing starting buffer address %x at address %x\n", (int)TxBufferPtr, base_address + MM2S_CONTROL_REGISTER + MM2S_SRC_ADDRESS_REGISTER);
+	// printk(KERN_INFO "[dma_simple_write] Writing starting buffer address %x at address %x\n", (int)TxBufferPtr, base_address + MM2S_CONTROL_REGISTER + MM2S_SRC_ADDRESS_REGISTER);
 	temp = ioread32(base_address + 0x18);
-	// // printk(KERN_INFO "[debug - iowrite/ioread] After writing starting address: %u [should be value from previous message]\n", temp);
+	// printk(KERN_INFO "[debug - iowrite/ioread] After writing starting address: %u [should be value from previous message]\n", temp);
 	
 
 
 	// Write into MM2S_LENGTH register. This is the length of a tranaction. 
 	iowrite32(pkt_len, base_address + MM2S_CONTROL_REGISTER + MM2S_TRNSFR_LENGTH_REGISTER);
-	// // printk(KERN_INFO "[dma_simple_write] Writing length of transaction %d at address %x\n", pkt_len, base_address + MM2S_CONTROL_REGISTER + MM2S_TRNSFR_LENGTH_REGISTER);
+	// printk(KERN_INFO "[dma_simple_write] Writing length of transaction %d at address %x\n", pkt_len, base_address + MM2S_CONTROL_REGISTER + MM2S_TRNSFR_LENGTH_REGISTER);
 	temp = ioread32(base_address + 0x28);
-	// // printk(KERN_INFO "[debug - iowrite/ioread] After writing length: %u [should be 128 for bias]\n", temp);
+	// printk(KERN_INFO "[debug - iowrite/ioread] After writing length: %u [should be 128 for bias]\n", temp);
 	return 0;
 }
 
@@ -911,20 +947,19 @@ unsigned int dma_simple_read(dma_addr_t TxBufferPtr, unsigned int pkt_len, void 
 
 	// Set RS bit in S2MM_DMACR register (this bit starts the DMA) 
 	iowrite32(0x1 |  S2MM_DMACR_reg, base_address + S2MM_CONTROL_REGISTER);
-    */
+    
 	/* Write into S2MM_SA register the value of TxBufferPtr. 
 	 * With this, the DMA knows from where to start writing into - this is the first address of data that needs to be transfered. 
 	*/
-    /*
+    
 	iowrite32((u32)TxBufferPtr, base_address + S2MM_DST_ADDRESS_REGISTER); 
-	*/
+
 	/* NOTE: no need for: base_address + S2MM_DST_ADDRESS_REGISTER + S2MM_CONTROL_REGISTER since 
 	 * S2MM_CONTROL_REGISTER address is alreay accounted for inside S2MM_DST_ADDRESS_REGISTER
 	*/
 
 	// Write into S2MM_LENGTH register. This is the length of a tranaction.
-    /*
+    
 	iowrite32(pkt_len, base_address + S2MM_BUFF_LENGTH_REGISTER);
 	return 0;
 }
-*/
